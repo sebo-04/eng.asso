@@ -1,56 +1,62 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from './supabaseClient';
 import bgImage from './img/1.png';
+
 export default function AdminMessages() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
+  const [loading, setLoading] = useState(true);
   const INDEX_PAGE_ROUTE = '/';
+
   useEffect(() => {
-    try {
-      const savedList = JSON.parse(localStorage.getItem('receivedMessages') || '[]');
-      const latestSingle = JSON.parse(localStorage.getItem('latestMessageSubmission') || 'null');
-      let normalizedList = Array.isArray(savedList) ? savedList : [];
-      if (
-        latestSingle &&
-        (latestSingle.message || latestSingle.name) &&
-        !normalizedList.some((item) => item.id === latestSingle.id)
-      ) {
-        normalizedList = [latestSingle, ...normalizedList];
-      }
-      const formattedList = normalizedList
-        .map((item, idx) => ({
-          id: item.id ?? Date.now() + idx,
+    const fetchMessages = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .order('sent_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        const formattedList = data.map((item) => ({
+          id: item.id,
           name: item.name && item.name.trim() ? item.name.trim() : 'بدون اسم',
           message: item.message || '',
-          sentAt: item.sentAt || new Date().toISOString(),
-          isRead: Boolean(item.isRead),
-        }))
-        .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt) || b.id - a.id);
-      setMessages(formattedList);
-    } catch {
-      setMessages([]);
-    }
+          sentAt: item.sent_at || new Date().toISOString(),
+          isRead: Boolean(item.is_read),
+        }));
+        setMessages(formattedList);
+      }
+      setLoading(false);
+    };
+
+    fetchMessages();
   }, []);
-  const persistMessages = (updatedList) => {
-    setMessages(updatedList);
-    localStorage.setItem('receivedMessages', JSON.stringify(updatedList));
-  };
-  const handleOpenMessage = (msg) => {
-    const updatedList = messages.map((item) =>
-      item.id === msg.id ? { ...item, isRead: true } : item
-    );
-    persistMessages(updatedList);
+
+  const handleOpenMessage = async (msg) => {
     setSelectedMessage({ ...msg, isRead: true });
+    if (!msg.isRead) {
+      setMessages((prev) =>
+        prev.map((item) => (item.id === msg.id ? { ...item, isRead: true } : item))
+      );
+      await supabase
+        .from('messages')
+        .update({ is_read: true })
+        .eq('id', msg.id);
+    }
   };
-  const handleDeleteMessage = (idToDelete) => {
-    const updatedList = messages.filter((item) => item.id !== idToDelete);
-    persistMessages(updatedList);
+
+  const handleDeleteMessage = async (idToDelete) => {
+    setMessages((prev) => prev.filter((item) => item.id !== idToDelete));
     if (selectedMessage && selectedMessage.id === idToDelete) {
       setSelectedMessage(null);
     }
+    await supabase.from('messages').delete().eq('id', idToDelete);
   };
+
   const cardMinHeight = messages.length <= 1 ? 155 : Math.min(115 + messages.length * 76, 520);
+
   return (
     <div className="inbox-page-wrapper" dir="rtl">
       <style>{`
@@ -293,7 +299,9 @@ export default function AdminMessages() {
         className={`inbox-main-card ${messages.length > 1 ? 'has-multiple' : ''}`}
         style={{ minHeight: `${cardMinHeight}px` }}
       >
-        {messages.length === 0 ? (
+        {loading ? (
+          <p className="empty-state-text">جاري تحميل الرسائل...</p>
+        ) : messages.length === 0 ? (
           <p className="empty-state-text">لا توجد رسائل واردة بعد</p>
         ) : (
           messages.map((item) => (

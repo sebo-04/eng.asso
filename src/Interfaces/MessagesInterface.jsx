@@ -1,57 +1,68 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from './supabaseClient';
 import bgImage from './img/1.png';
 import logoImage from './img/w-logo.jpeg';
+
 export default function MessagesInterface() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [message, setMessage] = useState('');
   const [statusNotice, setStatusNotice] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const messageTextareaRef = useRef(null);
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const SECRET_PASSWORD = 'eng.asso'; 
-  const ADMIN_MESSAGES_ROUTE = '/admin'; 
-  const INDEX_PAGE_ROUTE = '/'; 
+  const SECRET_PASSWORD = 'eng.asso';
+  const ADMIN_MESSAGES_ROUTE = '/admin';
+  const INDEX_PAGE_ROUTE = '/';
+
   const adjustTextareaHeight = () => {
     const el = messageTextareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.max(54, el.scrollHeight)}px`;
   };
+
   useEffect(() => {
     adjustTextareaHeight();
   }, [message]);
-  const handleSubmit = (e) => {
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim() && !message.trim()) {
       setStatusNotice('من فضلكِ اكتب اسمك و رسالتك');
       return;
     }
-    const submissionData = {
+
+    setIsSubmitting(true);
+    setStatusNotice('');
+
+    const newRow = {
       id: Date.now(),
       name: name.trim() || 'بدون اسم',
       message: message.trim(),
-      sentAt: new Date().toISOString(),
-      isRead: false,
+      sent_at: new Date().toISOString(),
+      is_read: false,
     };
-    localStorage.setItem('latestMessageSubmission', JSON.stringify(submissionData));
-    try {
-      const existingList = JSON.parse(localStorage.getItem('receivedMessages') || '[]');
-      const updatedList = Array.isArray(existingList)
-        ? [submissionData, ...existingList]
-        : [submissionData];
-      localStorage.setItem('receivedMessages', JSON.stringify(updatedList));
-    } catch {
-      localStorage.setItem('receivedMessages', JSON.stringify([submissionData]));
+
+    const { error } = await supabase.from('messages').insert([newRow]);
+
+    setIsSubmitting(false);
+
+    if (error) {
+      setStatusNotice('تعذر إرسال الرسالة، حاولي مرة أخرى');
+      return;
     }
+
     setName('');
     setMessage('');
     setStatusNotice('');
     navigate(INDEX_PAGE_ROUTE);
   };
+
   const handlePasswordSubmit = (e) => {
     e.preventDefault();
     if (passwordInput === SECRET_PASSWORD) {
@@ -63,11 +74,13 @@ export default function MessagesInterface() {
       setErrorMessage('انت مش وصال(눈_눈)');
     }
   };
+
   const handleCloseModal = () => {
     setShowPasswordModal(false);
     setPasswordInput('');
     setErrorMessage('');
   };
+
   return (
     <div className="msg-page-wrapper" dir="rtl">
       <style>{`
@@ -237,9 +250,13 @@ export default function MessagesInterface() {
           box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
           transition: transform 0.15s ease, background-color 0.2s ease;
         }
-        .submit-btn:hover {
+        .submit-btn:hover:not(:disabled) {
           background-color: #ffffff;
           transform: translateY(-2px);
+        }
+        .submit-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
         }
         .bottom-caption {
           color: #ffffff;
@@ -408,8 +425,8 @@ export default function MessagesInterface() {
           />
         </div>
         {statusNotice && <p className="notice-text">{statusNotice}</p>}
-        <button type="submit" className="submit-btn">
-          ارسال
+        <button type="submit" className="submit-btn" disabled={isSubmitting}>
+          {isSubmitting ? 'جاري الإرسال...' : 'ارسال'}
         </button>
       </form>
       <footer className="bottom-caption">
@@ -419,7 +436,7 @@ export default function MessagesInterface() {
         <div className="modal-overlay">
           <div className="modal-box">
             <label htmlFor="secretPasswordInput" className="modal-title">
-            Password ميعرفاش الا وصال
+              Password ميعرفاش الا وصال
             </label>
             <form onSubmit={handlePasswordSubmit} className="modal-form">
               <input
